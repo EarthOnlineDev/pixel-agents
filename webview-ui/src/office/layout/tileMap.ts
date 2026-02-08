@@ -1,12 +1,12 @@
-import { TileType, MAP_COLS, MAP_ROWS, TILE_SIZE, Direction } from './types.js'
-import type { DeskSlot, FurnitureInstance } from './types.js'
+import { TileType, MAP_COLS, MAP_ROWS, TILE_SIZE, Direction } from '../types.js'
+import type { DeskSlot, FurnitureInstance } from '../types.js'
 import {
   DESK_SQUARE_SPRITE,
   PLANT_SPRITE,
   BOOKSHELF_SPRITE,
   COOLER_SPRITE,
   WHITEBOARD_SPRITE,
-} from './sprites.js'
+} from '../sprites/spriteData.js'
 
 const W = TileType.WALL
 const T = TileType.TILE_FLOOR

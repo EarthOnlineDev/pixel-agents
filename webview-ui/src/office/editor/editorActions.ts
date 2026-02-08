@@ -1,6 +1,6 @@
-import { MAP_COLS, MAP_ROWS } from './types.js'
-import type { TileType as TileTypeVal, OfficeLayout, PlacedFurniture, FurnitureType } from './types.js'
-import { getCatalogEntry } from './furnitureCatalog.js'
+import { MAP_COLS, MAP_ROWS } from '../types.js'
+import type { TileType as TileTypeVal, OfficeLayout, PlacedFurniture, FurnitureType } from '../types.js'
+import { getCatalogEntry } from '../layout/furnitureCatalog.js'
 
 /** Paint a single tile. Returns new layout (immutable). */
 export function paintTile(layout: OfficeLayout, col: number, row: number, tileType: TileTypeVal): OfficeLayout {

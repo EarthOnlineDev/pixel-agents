@@ -1,14 +1,14 @@
-import { TILE_SIZE } from './types.js'
-import type { Character, DeskSlot, FurnitureInstance, TileType as TileTypeVal, OfficeLayout } from './types.js'
+import { TILE_SIZE } from '../types.js'
+import type { Character, DeskSlot, FurnitureInstance, TileType as TileTypeVal, OfficeLayout } from '../types.js'
 import { createCharacter, updateCharacter } from './characters.js'
-import { getWalkableTiles } from './tileMap.js'
+import { getWalkableTiles } from '../layout/tileMap.js'
 import {
   createDefaultLayout,
   layoutToTileMap,
   layoutToFurnitureInstances,
   layoutToDeskSlots,
   getBlockedTiles,
-} from './layoutSerializer.js'
+} from '../layout/layoutSerializer.js'
 
 export class OfficeState {
   layout: OfficeLayout

@@ -1,5 +1,5 @@
-import { EditTool, TileType, FurnitureType } from './types.js'
-import type { TileType as TileTypeVal, OfficeLayout } from './types.js'
+import { EditTool, TileType, FurnitureType } from '../types.js'
+import type { TileType as TileTypeVal, OfficeLayout } from '../types.js'
 
 export class EditorState {
   isEditMode = false

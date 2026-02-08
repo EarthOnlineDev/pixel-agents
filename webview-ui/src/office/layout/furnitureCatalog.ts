@@ -1,5 +1,5 @@
-import { FurnitureType } from './types.js'
-import type { FurnitureCatalogEntry } from './types.js'
+import { FurnitureType } from '../types.js'
+import type { FurnitureCatalogEntry } from '../types.js'
 import {
   DESK_SQUARE_SPRITE,
   BOOKSHELF_SPRITE,
@@ -9,7 +9,7 @@ import {
   CHAIR_SPRITE,
   PC_SPRITE,
   LAMP_SPRITE,
-} from './sprites.js'
+} from '../sprites/spriteData.js'
 
 export const FURNITURE_CATALOG: FurnitureCatalogEntry[] = [
   { type: FurnitureType.DESK, label: 'Desk', footprintW: 2, footprintH: 2, sprite: DESK_SQUARE_SPRITE, isDesk: true },

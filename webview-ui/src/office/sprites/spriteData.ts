@@ -1,5 +1,5 @@
-import type { Direction, SpriteData } from './types.js'
-import { Direction as Dir } from './types.js'
+import type { Direction, SpriteData } from '../types.js'
+import { Direction as Dir } from '../types.js'
 
 // ── Color Palettes ──────────────────────────────────────────────
 const _ = '' // transparent

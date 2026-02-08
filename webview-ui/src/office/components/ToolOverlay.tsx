@@ -1,9 +1,4 @@
-interface ToolActivity {
-  toolId: string
-  status: string
-  done: boolean
-  permissionWait?: boolean
-}
+import type { ToolActivity } from '../types.js'
 
 interface ToolOverlayProps {
   agentId: number | null

@@ -1,7 +1,7 @@
-import { EditTool, TileType, FurnitureType } from './types.js'
-import type { TileType as TileTypeVal } from './types.js'
-import { FURNITURE_CATALOG } from './furnitureCatalog.js'
-import { getCachedSprite } from './spriteCache.js'
+import { EditTool, TileType, FurnitureType } from '../types.js'
+import type { TileType as TileTypeVal } from '../types.js'
+import { FURNITURE_CATALOG } from '../layout/furnitureCatalog.js'
+import { getCachedSprite } from '../sprites/spriteCache.js'
 
 const TILE_OPTIONS: Array<{ type: TileTypeVal; label: string; color: string }> = [
   { type: TileType.WALL, label: 'Wall', color: '#3A3A5C' },

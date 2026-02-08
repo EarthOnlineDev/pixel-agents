@@ -5,11 +5,27 @@ VS Code extension with an embedded React webview panel.
 ## Architecture
 
 ```
-├── src/extension.ts          — Extension entry point. Registers a WebviewViewProvider
-│                               that loads the built React app into the bottom panel.
+├── src/                      — Extension backend (Node.js, VS Code API)
+│   ├── extension.ts          — Entry point: activate(), deactivate()
+│   ├── ArcadiaViewProvider.ts — WebviewViewProvider class, message dispatch, dispose
+│   ├── agentManager.ts       — Terminal lifecycle: launch, remove, restore, persist, send
+│   ├── fileWatcher.ts        — File I/O: fs.watch, polling, readNewLines, /clear detection
+│   ├── transcriptParser.ts   — JSONL parsing: tool_use/tool_result → webview messages
+│   ├── timerManager.ts       — Waiting/permission timer logic (debounce, detection)
+│   └── types.ts              — Shared interfaces (AgentState, PersistedAgent)
 ├── webview-ui/               — Standalone React + TypeScript app (Vite)
-│   ├── src/App.tsx           — Root component (office canvas + message handling)
-│   ├── src/office/           — Pixel art office UI (see "Office UI" section below)
+│   ├── src/
+│   │   ├── App.tsx           — Composition root (~105 lines), hooks + components
+│   │   ├── vscodeApi.ts      — acquireVsCodeApi() singleton
+│   │   ├── main.tsx          — React entry point
+│   │   ├── hooks/
+│   │   │   ├── useExtensionMessages.ts — Message handler + agent/tool state
+│   │   │   ├── useEditorActions.ts     — Editor state + all editor callbacks
+│   │   │   └── useEditorKeyboard.ts    — Keyboard shortcut effect
+│   │   ├── components/
+│   │   │   ├── FloatingButtons.tsx     — Top-left button bar + zoom controls
+│   │   │   └── AgentLabels.tsx         — Name labels + status dots above characters
+│   │   └── office/           — Pixel art office UI (see "Office UI" section below)
 │   └── vite.config.ts        — Builds to ../dist/webview with relative base paths
 ├── esbuild.js                — Bundles the extension (src/) → dist/extension.js
 ├── dist/                     — Build output (gitignored)
@@ -126,25 +142,41 @@ The webview renders a top-down pixel art office (Gather.town style) instead of a
 
 ### File structure
 
-All files live under `webview-ui/src/office/`:
+All files live under `webview-ui/src/office/`, organized into subdirectories by responsibility:
 
 ```
 office/
-  types.ts            — Constants (TILE_SIZE=16, MAP 20x11), interfaces, FurnitureType, EditTool, OfficeLayout
-  sprites.ts          — Hardcoded pixel data for characters (6 palettes), furniture, tiles (desk, bookshelf, plant, cooler, whiteboard, chair, PC, lamp)
-  spriteCache.ts      — Renders SpriteData → offscreen canvas, WeakMap cache by reference
-  furnitureCatalog.ts — FurnitureType → sprite/footprint/isDesk catalog + getCatalogEntry()
-  layoutSerializer.ts — OfficeLayout ↔ runtime conversion (tileMap, furniture instances, desk slots, blocked tiles)
-  editorActions.ts    — Pure layout manipulation: paintTile, placeFurniture, removeFurniture, moveFurniture, canPlaceFurniture
-  editorState.ts      — Imperative editor state class (tools, ghost preview, selection, undo stack)
-  EditorToolbar.tsx   — React toolbar/palette component for edit mode
-  tileMap.ts          — Office layout grid, desk slot positions, furniture placement, pathfinding (param renamed: deskTiles → blockedTiles)
-  gameLoop.ts         — requestAnimationFrame loop with delta time (capped at 0.1s)
-  renderer.ts         — Canvas drawing: tiles, z-sorted furniture + characters, edit overlays (grid, ghost, selection)
-  characters.ts       — Character state machine: idle/walk/type + wander AI (handles deskSlot=-1 for no-desk case)
-  officeState.ts      — Central game world: layout-aware construction, rebuildFromLayout(), bridges messages → character lifecycle
-  OfficeCanvas.tsx    — React component: canvas ref, ResizeObserver, DPR, mouse hit-testing, edit mode tile interactions
-  ToolOverlay.tsx     — HTML tooltip positioned over hovered character showing tool status
+  types.ts              — Constants (TILE_SIZE=16, MAP 20x11), interfaces, FurnitureType, EditTool, OfficeLayout, ToolActivity
+  toolUtils.ts          — STATUS_TO_TOOL mapping, extractToolName(), defaultZoom()
+
+  sprites/              — Pixel art data + caching (pure data, no game logic)
+    spriteData.ts       — Hardcoded pixel data for characters (6 palettes), furniture, tiles
+    spriteCache.ts      — Renders SpriteData → offscreen canvas, per-zoom WeakMap cache
+    index.ts            — Barrel re-exports
+
+  editor/               — Layout editing tools, state, and UI
+    editorActions.ts    — Pure layout manipulation: paintTile, placeFurniture, removeFurniture, moveFurniture, canPlaceFurniture
+    editorState.ts      — Imperative editor state class (tools, ghost preview, selection, undo stack)
+    EditorToolbar.tsx   — React toolbar/palette component for edit mode
+    index.ts            — Barrel re-exports
+
+  layout/               — Layout data model, serialization, spatial queries, pathfinding
+    furnitureCatalog.ts — FurnitureType → sprite/footprint/isDesk catalog + getCatalogEntry()
+    layoutSerializer.ts — OfficeLayout ↔ runtime conversion (tileMap, furniture instances, desk slots, blocked tiles)
+    tileMap.ts          — Office layout grid, desk slot positions, furniture placement, pathfinding
+    index.ts            — Barrel re-exports
+
+  engine/               — Character state machine, game world, game loop, rendering
+    characters.ts       — Character state machine: idle/walk/type + wander AI (handles deskSlot=-1)
+    officeState.ts      — Central game world: layout-aware construction, rebuildFromLayout(), character lifecycle
+    gameLoop.ts         — requestAnimationFrame loop with delta time (capped at 0.1s)
+    renderer.ts         — Canvas drawing: tiles, z-sorted furniture + characters, edit overlays
+    index.ts            — Barrel re-exports
+
+  components/           — React components that render the office
+    OfficeCanvas.tsx    — Canvas ref, ResizeObserver, DPR, mouse hit-testing, edit mode interactions
+    ToolOverlay.tsx     — HTML tooltip positioned over hovered character showing tool status
+    index.ts            — Barrel re-exports
 ```
 
 ### How rendering works
@@ -164,16 +196,19 @@ office/
 ### Data flow
 
 ```
-Extension messages → App.tsx handler → officeState.method() + React setState()
-                                              ↓
-                                    requestAnimationFrame loop
-                                              ↓
-                                    officeState.update(dt) → character movement
-                                              ↓
-                                    renderer draws to canvas (reads officeState)
+Extension messages → useExtensionMessages hook → officeState.method() + React setState()
+                                                        ↓
+                                              requestAnimationFrame loop
+                                                        ↓
+                                              officeState.update(dt) → character movement
+                                                        ↓
+                                              renderer draws to canvas (reads officeState)
 
 React state (agentTools etc.) → ToolOverlay component (HTML positioned over canvas)
                               → AgentLabels component (name + status dot above each character)
+
+Editor actions → useEditorActions hook → editorState mutations + officeState.rebuildFromLayout()
+Keyboard       → useEditorKeyboard hook → delegates to useEditorActions callbacks
 ```
 
 ### Character behavior
@@ -232,7 +267,7 @@ Toggle-based edit mode for customizing the office layout:
 
 **No-desk behavior**: When all desk slots are taken or no desks exist, agents get `deskSlot = -1` and type in place (no pathfinding to desk). When idle, they wander normally.
 
-**Furniture catalog**: `furnitureCatalog.ts` maps each `FurnitureType` to sprite, footprint size, and `isDesk` flag. `layoutSerializer.ts` generates desk slots dynamically from placed desk furniture.
+**Furniture catalog**: `layout/furnitureCatalog.ts` maps each `FurnitureType` to sprite, footprint size, and `isDesk` flag. `layout/layoutSerializer.ts` generates desk slots dynamically from placed desk furniture.
 
 **Edit mode rendering**: Grid overlay (subtle white lines), ghost preview (semi-transparent sprite with green/red validity tint), selection highlight (dashed blue border). Characters keep animating during editing.
 

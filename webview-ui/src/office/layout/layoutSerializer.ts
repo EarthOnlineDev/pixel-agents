@@ -1,5 +1,5 @@
-import { TileType, FurnitureType, MAP_COLS, MAP_ROWS, TILE_SIZE, Direction } from './types.js'
-import type { TileType as TileTypeVal, OfficeLayout, PlacedFurniture, DeskSlot, FurnitureInstance } from './types.js'
+import { TileType, FurnitureType, MAP_COLS, MAP_ROWS, TILE_SIZE, Direction } from '../types.js'
+import type { TileType as TileTypeVal, OfficeLayout, PlacedFurniture, DeskSlot, FurnitureInstance } from '../types.js'
 import { getCatalogEntry } from './furnitureCatalog.js'
 
 /** Convert flat tile array from layout into 2D grid */

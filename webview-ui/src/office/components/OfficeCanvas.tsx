@@ -1,12 +1,12 @@
 import { useRef, useEffect, useCallback } from 'react'
-import type { OfficeState } from './officeState.js'
-import type { EditorState } from './editorState.js'
-import type { EditorRenderState } from './renderer.js'
-import { startGameLoop } from './gameLoop.js'
-import { renderFrame } from './renderer.js'
-import { TILE_SIZE, MAP_COLS, MAP_ROWS, EditTool } from './types.js'
-import { getCatalogEntry } from './furnitureCatalog.js'
-import { canPlaceFurniture } from './editorActions.js'
+import type { OfficeState } from '../engine/officeState.js'
+import type { EditorState } from '../editor/editorState.js'
+import type { EditorRenderState } from '../engine/renderer.js'
+import { startGameLoop } from '../engine/gameLoop.js'
+import { renderFrame } from '../engine/renderer.js'
+import { TILE_SIZE, MAP_COLS, MAP_ROWS, EditTool } from '../types.js'
+import { getCatalogEntry } from '../layout/furnitureCatalog.js'
+import { canPlaceFurniture } from '../editor/editorActions.js'
 
 interface OfficeCanvasProps {
   officeState: OfficeState

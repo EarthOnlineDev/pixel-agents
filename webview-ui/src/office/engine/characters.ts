@@ -1,7 +1,7 @@
-import { CharacterState, Direction, TILE_SIZE } from './types.js'
-import type { Character, DeskSlot, SpriteData, TileType as TileTypeVal } from './types.js'
-import type { CharacterSprites } from './sprites.js'
-import { findPath } from './tileMap.js'
+import { CharacterState, Direction, TILE_SIZE } from '../types.js'
+import type { Character, DeskSlot, SpriteData, TileType as TileTypeVal } from '../types.js'
+import type { CharacterSprites } from '../sprites/spriteData.js'
+import { findPath } from '../layout/tileMap.js'
 
 const WALK_SPEED = 48 // pixels per second
 const IDLE_FRAME_DURATION = 0.6

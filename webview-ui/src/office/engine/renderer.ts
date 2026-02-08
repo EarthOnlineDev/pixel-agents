@@ -1,7 +1,7 @@
-import { TileType, TILE_SIZE, MAP_COLS, MAP_ROWS } from './types.js'
-import type { TileType as TileTypeVal, FurnitureInstance, Character, SpriteData } from './types.js'
-import { getCachedSprite } from './spriteCache.js'
-import { getCharacterSprites } from './sprites.js'
+import { TileType, TILE_SIZE, MAP_COLS, MAP_ROWS } from '../types.js'
+import type { TileType as TileTypeVal, FurnitureInstance, Character, SpriteData } from '../types.js'
+import { getCachedSprite } from '../sprites/spriteCache.js'
+import { getCharacterSprites } from '../sprites/spriteData.js'
 import { getCharacterSprite } from './characters.js'
 
 // ── Tile colors ─────────────────────────────────────────────────

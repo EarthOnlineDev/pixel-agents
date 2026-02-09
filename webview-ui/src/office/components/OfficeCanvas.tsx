@@ -329,29 +329,33 @@ export function OfficeCanvas({ officeState, onHover, onClick, isEditMode, editor
 
       // No agent hit — check seat click while agent is selected
       if (officeState.selectedAgentId !== null) {
-        const tile = screenToTile(e.clientX, e.clientY)
-        if (tile) {
-          const seatId = officeState.getSeatAtTile(tile.col, tile.row)
-          if (seatId) {
-            const selectedCh = officeState.characters.get(officeState.selectedAgentId)
-            const seat = officeState.seats.get(seatId)
-            if (seat && selectedCh) {
-              if (selectedCh.seatId === seatId) {
-                // Clicked own seat — send agent back to it
-                officeState.sendToSeat(officeState.selectedAgentId)
-                officeState.selectedAgentId = null
-                return
-              } else if (!seat.assigned) {
-                // Clicked available seat — reassign
-                officeState.reassignSeat(officeState.selectedAgentId, seatId)
-                officeState.selectedAgentId = null
-                // Persist seat assignments
-                const seats: Record<number, { palette: number; seatId: string | null }> = {}
-                for (const ch of officeState.characters.values()) {
-                  seats[ch.id] = { palette: ch.palette, seatId: ch.seatId }
+        const selectedCh = officeState.characters.get(officeState.selectedAgentId)
+        // Skip seat reassignment for sub-agents
+        if (selectedCh && !selectedCh.isSubagent) {
+          const tile = screenToTile(e.clientX, e.clientY)
+          if (tile) {
+            const seatId = officeState.getSeatAtTile(tile.col, tile.row)
+            if (seatId) {
+              const seat = officeState.seats.get(seatId)
+              if (seat && selectedCh) {
+                if (selectedCh.seatId === seatId) {
+                  // Clicked own seat — send agent back to it
+                  officeState.sendToSeat(officeState.selectedAgentId)
+                  officeState.selectedAgentId = null
+                  return
+                } else if (!seat.assigned) {
+                  // Clicked available seat — reassign
+                  officeState.reassignSeat(officeState.selectedAgentId, seatId)
+                  officeState.selectedAgentId = null
+                  // Persist seat assignments (exclude sub-agents)
+                  const seats: Record<number, { palette: number; seatId: string | null }> = {}
+                  for (const ch of officeState.characters.values()) {
+                    if (ch.isSubagent) continue
+                    seats[ch.id] = { palette: ch.palette, seatId: ch.seatId }
+                  }
+                  vscode.postMessage({ type: 'saveAgentSeats', seats })
+                  return
                 }
-                vscode.postMessage({ type: 'saveAgentSeats', seats })
-                return
               }
             }
           }

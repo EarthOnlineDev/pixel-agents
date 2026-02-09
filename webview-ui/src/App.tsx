@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react'
+import { useState, useCallback, useRef, useMemo } from 'react'
 import { OfficeState } from './office/engine/officeState.js'
 import { OfficeCanvas } from './office/components/OfficeCanvas.js'
 import { ToolOverlay } from './office/components/ToolOverlay.js'
@@ -24,7 +24,7 @@ function getOfficeState(): OfficeState {
 }
 
 function App() {
-  const { agents, selectedAgent, agentTools, agentStatuses, subagentTools, layoutReady } = useExtensionMessages(getOfficeState)
+  const { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady } = useExtensionMessages(getOfficeState)
 
   const editor = useEditorActions(getOfficeState, editorState)
 
@@ -54,8 +54,33 @@ function App() {
     setHoverPos({ x: screenX, y: screenY })
   }, [])
 
+  // Merge sub-agent tools into a unified tool map for ToolOverlay
+  const allAgentTools = useMemo(() => {
+    const merged: Record<number, import('./office/types.js').ToolActivity[]> = { ...agentTools }
+    for (const sub of subagentCharacters) {
+      const parentSubs = subagentTools[sub.parentAgentId]
+      if (parentSubs && parentSubs[sub.parentToolId]) {
+        merged[sub.id] = parentSubs[sub.parentToolId]
+      }
+    }
+    return merged
+  }, [agentTools, subagentTools, subagentCharacters])
+
+  // Build a label map for sub-agent characters (used by ToolOverlay + AgentLabels)
+  const agentLabels = useMemo(() => {
+    const labels: Record<number, string> = {}
+    for (const sub of subagentCharacters) {
+      labels[sub.id] = sub.label
+    }
+    return labels
+  }, [subagentCharacters])
+
   const handleClick = useCallback((agentId: number) => {
-    vscode.postMessage({ type: 'focusAgent', id: agentId })
+    // If clicked agent is a sub-agent, focus the parent's terminal instead
+    const os = getOfficeState()
+    const meta = os.subagentMeta.get(agentId)
+    const focusId = meta ? meta.parentAgentId : agentId
+    vscode.postMessage({ type: 'focusAgent', id: focusId })
   }, [])
 
   const officeState = getOfficeState()
@@ -126,15 +151,17 @@ function App() {
         containerRef={containerRef}
         zoom={editor.zoom}
         panRef={editor.panRef}
+        subagentCharacters={subagentCharacters}
       />
 
       <ToolOverlay
         agentId={hoveredAgent}
         screenX={hoverPos.x}
         screenY={hoverPos.y}
-        agentTools={agentTools}
+        agentTools={allAgentTools}
         agentStatuses={agentStatuses}
         subagentTools={subagentTools}
+        agentLabels={agentLabels}
       />
 
       {isDebugMode && (

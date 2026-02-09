@@ -22,6 +22,11 @@ export class OfficeState {
   selectedAgentId: number | null = null
   hoveredAgentId: number | null = null
   hoveredTile: { col: number; row: number } | null = null
+  /** Maps "parentId:toolId" → sub-agent character ID (negative) */
+  subagentIdMap: Map<string, number> = new Map()
+  /** Reverse lookup: sub-agent character ID → parent info */
+  subagentMeta: Map<number, { parentAgentId: number; parentToolId: string }> = new Map()
+  private nextSubagentId = -1
   private nextPalette = 0
 
   constructor(layout?: OfficeLayout) {
@@ -210,6 +215,95 @@ export class OfficeState {
         ch.seatTimer = 3.0 + Math.random() * 2.0
       }
     }
+  }
+
+  /** Create a sub-agent character with the parent's palette. Returns the sub-agent ID. */
+  addSubagent(parentAgentId: number, parentToolId: string): number {
+    const key = `${parentAgentId}:${parentToolId}`
+    if (this.subagentIdMap.has(key)) return this.subagentIdMap.get(key)!
+
+    const id = this.nextSubagentId--
+    const parentCh = this.characters.get(parentAgentId)
+    const palette = parentCh ? parentCh.palette : 0
+
+    // Find a free seat
+    let seatId: string | null = null
+    for (const [uid, seat] of this.seats) {
+      if (!seat.assigned) {
+        seatId = uid
+        break
+      }
+    }
+
+    if (seatId) {
+      const seat = this.seats.get(seatId)!
+      seat.assigned = true
+      const ch = createCharacter(id, palette, seatId, seat)
+      ch.isSubagent = true
+      ch.parentAgentId = parentAgentId
+      this.characters.set(id, ch)
+    } else {
+      // No seats — spawn at random walkable tile
+      const spawn = this.walkableTiles.length > 0
+        ? this.walkableTiles[Math.floor(Math.random() * this.walkableTiles.length)]
+        : { col: 1, row: 1 }
+      const ch = createCharacter(id, palette, null, null)
+      ch.isSubagent = true
+      ch.parentAgentId = parentAgentId
+      ch.x = spawn.col * TILE_SIZE + TILE_SIZE / 2
+      ch.y = spawn.row * TILE_SIZE + TILE_SIZE / 2
+      ch.tileCol = spawn.col
+      ch.tileRow = spawn.row
+      this.characters.set(id, ch)
+    }
+
+    this.subagentIdMap.set(key, id)
+    this.subagentMeta.set(id, { parentAgentId, parentToolId })
+    return id
+  }
+
+  /** Remove a specific sub-agent character and free its seat */
+  removeSubagent(parentAgentId: number, parentToolId: string): void {
+    const key = `${parentAgentId}:${parentToolId}`
+    const id = this.subagentIdMap.get(key)
+    if (id === undefined) return
+
+    const ch = this.characters.get(id)
+    if (ch && ch.seatId) {
+      const seat = this.seats.get(ch.seatId)
+      if (seat) seat.assigned = false
+    }
+    this.characters.delete(id)
+    this.subagentIdMap.delete(key)
+    this.subagentMeta.delete(id)
+    if (this.selectedAgentId === id) this.selectedAgentId = null
+  }
+
+  /** Remove all sub-agents belonging to a parent agent */
+  removeAllSubagents(parentAgentId: number): void {
+    const toRemove: string[] = []
+    for (const [key, id] of this.subagentIdMap) {
+      const meta = this.subagentMeta.get(id)
+      if (meta && meta.parentAgentId === parentAgentId) {
+        const ch = this.characters.get(id)
+        if (ch && ch.seatId) {
+          const seat = this.seats.get(ch.seatId)
+          if (seat) seat.assigned = false
+        }
+        this.characters.delete(id)
+        this.subagentMeta.delete(id)
+        if (this.selectedAgentId === id) this.selectedAgentId = null
+        toRemove.push(key)
+      }
+    }
+    for (const key of toRemove) {
+      this.subagentIdMap.delete(key)
+    }
+  }
+
+  /** Look up the sub-agent character ID for a given parent+toolId, or null */
+  getSubagentId(parentAgentId: number, parentToolId: string): number | null {
+    return this.subagentIdMap.get(`${parentAgentId}:${parentToolId}`) ?? null
   }
 
   setAgentActive(id: number, active: boolean): void {

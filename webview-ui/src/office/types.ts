@@ -156,4 +156,8 @@ export interface Character {
   bubbleTimer: number
   /** Timer to stay seated while inactive after seat reassignment (counts down to 0) */
   seatTimer: number
+  /** Whether this character represents a sub-agent (spawned by Task tool) */
+  isSubagent: boolean
+  /** Parent agent ID if this is a sub-agent, null otherwise */
+  parentAgentId: number | null
 }

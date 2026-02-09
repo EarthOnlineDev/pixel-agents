@@ -4,18 +4,27 @@ import type { OfficeLayout, ToolActivity } from '../office/types.js'
 import { extractToolName } from '../office/toolUtils.js'
 import { vscode } from '../vscodeApi.js'
 
+export interface SubagentCharacter {
+  id: number
+  parentAgentId: number
+  parentToolId: string
+  label: string
+}
+
 export interface ExtensionMessageState {
   agents: number[]
   selectedAgent: number | null
   agentTools: Record<number, ToolActivity[]>
   agentStatuses: Record<number, string>
   subagentTools: Record<number, Record<string, ToolActivity[]>>
+  subagentCharacters: SubagentCharacter[]
   layoutReady: boolean
 }
 
 function saveAgentSeats(os: OfficeState): void {
   const seats: Record<number, { palette: number; seatId: string | null }> = {}
   for (const ch of os.characters.values()) {
+    if (ch.isSubagent) continue
     seats[ch.id] = { palette: ch.palette, seatId: ch.seatId }
   }
   vscode.postMessage({ type: 'saveAgentSeats', seats })
@@ -27,6 +36,7 @@ export function useExtensionMessages(getOfficeState: () => OfficeState): Extensi
   const [agentTools, setAgentTools] = useState<Record<number, ToolActivity[]>>({})
   const [agentStatuses, setAgentStatuses] = useState<Record<number, string>>({})
   const [subagentTools, setSubagentTools] = useState<Record<number, Record<string, ToolActivity[]>>>({})
+  const [subagentCharacters, setSubagentCharacters] = useState<SubagentCharacter[]>([])
   const [layoutReady, setLayoutReady] = useState(false)
 
   useEffect(() => {
@@ -79,6 +89,9 @@ export function useExtensionMessages(getOfficeState: () => OfficeState): Extensi
           delete next[id]
           return next
         })
+        // Remove all sub-agent characters belonging to this agent
+        os.removeAllSubagents(id)
+        setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id))
         os.removeAgent(id)
       } else if (msg.type === 'existingAgents') {
         const incoming = msg.agents as number[]
@@ -111,6 +124,15 @@ export function useExtensionMessages(getOfficeState: () => OfficeState): Extensi
         os.setAgentTool(id, toolName)
         os.setAgentActive(id, true)
         os.clearPermissionBubble(id)
+        // Create sub-agent character for Task tool subtasks
+        if (status.startsWith('Subtask:')) {
+          const label = status.slice('Subtask:'.length).trim()
+          const subId = os.addSubagent(id, toolId)
+          setSubagentCharacters((prev) => {
+            if (prev.some((s) => s.id === subId)) return prev
+            return [...prev, { id: subId, parentAgentId: id, parentToolId: toolId, label }]
+          })
+        }
       } else if (msg.type === 'agentToolDone') {
         const id = msg.id as number
         const toolId = msg.toolId as string
@@ -136,6 +158,9 @@ export function useExtensionMessages(getOfficeState: () => OfficeState): Extensi
           delete next[id]
           return next
         })
+        // Remove all sub-agent characters belonging to this agent
+        os.removeAllSubagents(id)
+        setSubagentCharacters((prev) => prev.filter((s) => s.parentAgentId !== id))
         os.setAgentTool(id, null)
         os.clearPermissionBubble(id)
       } else if (msg.type === 'agentSelected') {
@@ -192,6 +217,13 @@ export function useExtensionMessages(getOfficeState: () => OfficeState): Extensi
           if (list.some((t) => t.toolId === toolId)) return prev
           return { ...prev, [id]: { ...agentSubs, [parentToolId]: [...list, { toolId, status, done: false }] } }
         })
+        // Update sub-agent character's tool and active state
+        const subId = os.getSubagentId(id, parentToolId)
+        if (subId !== null) {
+          const subToolName = extractToolName(status)
+          os.setAgentTool(subId, subToolName)
+          os.setAgentActive(subId, true)
+        }
       } else if (msg.type === 'subagentToolDone') {
         const id = msg.id as number
         const parentToolId = msg.parentToolId as string
@@ -221,6 +253,9 @@ export function useExtensionMessages(getOfficeState: () => OfficeState): Extensi
           }
           return { ...prev, [id]: next }
         })
+        // Remove sub-agent character
+        os.removeSubagent(id, parentToolId)
+        setSubagentCharacters((prev) => prev.filter((s) => !(s.parentAgentId === id && s.parentToolId === parentToolId)))
       }
     }
     window.addEventListener('message', handler)
@@ -228,5 +263,5 @@ export function useExtensionMessages(getOfficeState: () => OfficeState): Extensi
     return () => window.removeEventListener('message', handler)
   }, [getOfficeState])
 
-  return { agents, selectedAgent, agentTools, agentStatuses, subagentTools, layoutReady }
+  return { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady }
 }

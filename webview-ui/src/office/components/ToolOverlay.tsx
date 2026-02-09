@@ -7,6 +7,7 @@ interface ToolOverlayProps {
   agentTools: Record<number, ToolActivity[]>
   agentStatuses: Record<number, string>
   subagentTools: Record<number, Record<string, ToolActivity[]>>
+  agentLabels?: Record<number, string>
 }
 
 export function ToolOverlay({
@@ -16,6 +17,7 @@ export function ToolOverlay({
   agentTools,
   agentStatuses,
   subagentTools,
+  agentLabels,
 }: ToolOverlayProps) {
   if (agentId === null) return null
 
@@ -51,7 +53,7 @@ export function ToolOverlay({
           color: 'var(--vscode-foreground)',
         }}
       >
-        Agent #{agentId}
+        {agentLabels?.[agentId] || `Agent #${agentId}`}
       </div>
       {tools.map((tool) => (
         <div key={tool.toolId}>

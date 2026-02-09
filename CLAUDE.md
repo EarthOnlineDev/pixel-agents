@@ -221,6 +221,18 @@ Keyboard       → useEditorKeyboard hook → delegates to useEditorActions call
 - **Created**: Spawns at desk in typing state (assumes new agents are immediately active).
 - **Removed**: Character disappears, seat freed for next agent.
 
+### Sub-agent characters
+
+When a parent agent spawns a sub-agent via the Task tool, a temporary character appears in the office scene. Sub-agents use **negative numeric IDs** (decrementing from `-1`) to avoid collisions with regular agent IDs (positive integers).
+
+**Lifecycle**: `agentToolStart` with `"Subtask:"` prefix → creates sub-agent character via `OfficeState.addSubagent()`. `subagentToolStart` → updates sub-agent's tool/active state. `subagentClear` → removes character. Bulk cleanup on `agentClosed` and `agentToolsClear` via `removeAllSubagents()`.
+
+**Visual behavior**: Sub-agents use the **same palette** as their parent (team grouping). They sit at available seats and animate (typing/reading) like regular agents. Name labels show the subtask description (italic, 8px, max 120px with ellipsis). Clicking a sub-agent focuses the **parent's terminal** (sub-agents don't have their own). Sub-agents are **not persisted** to workspace state and are excluded from `saveAgentSeats`.
+
+**State**: `OfficeState` holds `subagentIdMap` (`Map<string, number>` keyed by `"parentId:toolId"`), `subagentMeta` (reverse lookup), and `nextSubagentId` (decrementing counter). `Character` interface has `isSubagent: boolean` and `parentAgentId: number | null`. React state `subagentCharacters` in `useExtensionMessages` tracks `{ id, parentAgentId, parentToolId, label }`. `App.tsx` merges sub-agent tools into `allAgentTools` via `useMemo` and builds `agentLabels` map for ToolOverlay/AgentLabels.
+
+**Seat reassignment**: Sub-agent characters cannot be seat-reassigned (click handler in `OfficeCanvas` skips seat reassignment when `ch.isSubagent` is true).
+
 ### Speech bubbles
 
 Pixel art speech bubbles appear above agents to indicate status:

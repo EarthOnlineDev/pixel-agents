@@ -8,8 +8,15 @@
 
 import type { SpriteData, FloorColor } from './types.js'
 import { getColorizedSprite, clearColorizeCache } from './colorize.js'
+import { TILE_SIZE, FALLBACK_FLOOR_COLOR } from '../constants.js'
 
-/** Module-level storage for the 7 floor tile sprites (set once on load) */
+/** Default solid gray 16×16 tile used when floors.png is not loaded */
+const DEFAULT_FLOOR_SPRITE: SpriteData = Array.from(
+  { length: TILE_SIZE },
+  () => Array(TILE_SIZE).fill(FALLBACK_FLOOR_COLOR) as string[],
+)
+
+/** Module-level storage for floor tile sprites (set once on load) */
 let floorSprites: SpriteData[] = []
 
 /** Wall color constant */
@@ -21,26 +28,30 @@ export function setFloorSprites(sprites: SpriteData[]): void {
   clearColorizeCache()
 }
 
-/** Get the raw (grayscale) floor sprite for a pattern index (1-7 -> array index 0-6) */
+/** Get the raw (grayscale) floor sprite for a pattern index (1-7 -> array index 0-6).
+ *  Falls back to the default solid gray tile when floors.png is not loaded. */
 export function getFloorSprite(patternIndex: number): SpriteData | null {
   const idx = patternIndex - 1
-  if (idx < 0 || idx >= floorSprites.length) return null
-  return floorSprites[idx]
+  if (idx < 0) return null
+  if (idx < floorSprites.length) return floorSprites[idx]
+  // No PNG sprites loaded — return default solid tile for any valid pattern index
+  if (floorSprites.length === 0 && patternIndex >= 1) return DEFAULT_FLOOR_SPRITE
+  return null
 }
 
-/** Check if floor sprites have been loaded */
+/** Check if floor sprites are available (always true — falls back to default solid tile) */
 export function hasFloorSprites(): boolean {
-  return floorSprites.length > 0
+  return true
 }
 
-/** Get count of available floor patterns */
+/** Get count of available floor patterns (at least 1 for the default solid tile) */
 export function getFloorPatternCount(): number {
-  return floorSprites.length
+  return floorSprites.length > 0 ? floorSprites.length : 1
 }
 
-/** Get all floor sprites (for preview rendering) */
+/** Get all floor sprites (for preview rendering, falls back to default solid tile) */
 export function getAllFloorSprites(): SpriteData[] {
-  return floorSprites
+  return floorSprites.length > 0 ? floorSprites : [DEFAULT_FLOOR_SPRITE]
 }
 
 /**

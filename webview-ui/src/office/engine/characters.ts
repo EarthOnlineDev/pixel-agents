@@ -75,6 +75,7 @@ export function createCharacter(
     seatTimer: 0,
     isSubagent: false,
     parentAgentId: null,
+    remoteControlled: false,
     matrixEffect: null,
     matrixEffectTimer: 0,
     matrixEffectSeeds: [],
@@ -98,7 +99,8 @@ export function updateCharacter(
         ch.frame = (ch.frame + 1) % 2
       }
       // If no longer active, stand up and start wandering (after seatTimer expires)
-      if (!ch.isActive) {
+      // Remote-controlled characters stay seated — position updates come from network
+      if (!ch.isActive && !ch.remoteControlled) {
         if (ch.seatTimer > 0) {
           ch.seatTimer -= dt
           break
@@ -118,6 +120,8 @@ export function updateCharacter(
       // No idle animation — static pose
       ch.frame = 0
       if (ch.seatTimer < 0) ch.seatTimer = 0 // clear turn-end sentinel
+      // Remote-controlled characters don't auto-wander — wait for network position updates
+      if (ch.remoteControlled && !ch.isActive) break
       // If became active, pathfind to seat
       if (ch.isActive) {
         if (!ch.seatId) {

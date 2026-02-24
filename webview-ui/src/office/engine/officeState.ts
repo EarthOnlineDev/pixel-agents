@@ -566,6 +566,24 @@ export class OfficeState {
     this.furniture = layoutToFurnitureInstances(modifiedFurniture)
   }
 
+  /** Mark a character as remote-controlled (disables auto-wandering) */
+  setRemoteControlled(id: number, remote: boolean): void {
+    const ch = this.characters.get(id)
+    if (ch) ch.remoteControlled = remote
+  }
+
+  /** Teleport a character directly to a tile (for initial remote placement) */
+  teleportToTile(id: number, col: number, row: number): void {
+    const ch = this.characters.get(id)
+    if (!ch) return
+    ch.tileCol = col
+    ch.tileRow = row
+    ch.x = col * TILE_SIZE + TILE_SIZE / 2
+    ch.y = row * TILE_SIZE + TILE_SIZE / 2
+    ch.path = []
+    ch.moveProgress = 0
+  }
+
   setAgentTool(id: number, tool: string | null): void {
     const ch = this.characters.get(id)
     if (ch) {

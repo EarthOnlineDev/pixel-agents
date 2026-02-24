@@ -1,5 +1,4 @@
 import type { ToolActivity } from '../office/types.js'
-import { vscode } from '../vscodeApi.js'
 
 interface DebugViewProps {
   agents: number[]
@@ -89,7 +88,7 @@ export function DebugView({
             Agent #{id}
           </button>
           <button
-            onClick={() => vscode.postMessage({ type: 'closeAgent', id })}
+            onClick={() => { /* no-op in web app */ }}
             style={{
               borderRadius: 0,
               padding: '6px 8px',

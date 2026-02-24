@@ -8,8 +8,13 @@ import { paintTile, placeFurniture, removeFurniture, moveFurniture, rotateFurnit
 import type { ExpandDirection } from '../office/editor/editorActions.js'
 import { getCatalogEntry, getRotatedType, getToggledType } from '../office/layout/furnitureCatalog.js'
 import { defaultZoom } from '../office/toolUtils.js'
-import { vscode } from '../vscodeApi.js'
 import { LAYOUT_SAVE_DEBOUNCE_MS, ZOOM_MIN, ZOOM_MAX } from '../constants.js'
+
+// Callback for saving layout - will be set by the multiplayer hook
+let onSaveLayoutCallback: ((layout: OfficeLayout) => void) | null = null
+export function setOnSaveLayout(cb: (layout: OfficeLayout) => void): void {
+  onSaveLayoutCallback = cb
+}
 
 export interface EditorActions {
   isEditMode: boolean
@@ -62,7 +67,7 @@ export function useEditorActions(
   const saveLayout = useCallback((layout: OfficeLayout) => {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current)
     saveTimerRef.current = setTimeout(() => {
-      vscode.postMessage({ type: 'saveLayout', layout })
+      onSaveLayoutCallback?.(layout)
     }, LAYOUT_SAVE_DEBOUNCE_MS)
   }, [])
 
@@ -79,7 +84,7 @@ export function useEditorActions(
   }, [getOfficeState, editorState, saveLayout])
 
   const handleOpenClaude = useCallback(() => {
-    vscode.postMessage({ type: 'openClaude' })
+    // No-op in standalone web app (no VS Code terminal to open)
   }, [])
 
   const handleToggleEditMode = useCallback(() => {
@@ -303,7 +308,7 @@ export function useEditorActions(
     const os = getOfficeState()
     const layout = os.getLayout()
     lastSavedLayoutRef.current = structuredClone(layout)
-    vscode.postMessage({ type: 'saveLayout', layout })
+    onSaveLayoutCallback?.(layout)
     editorState.isDirty = false
     setIsDirty(false)
   }, [getOfficeState, editorState])

@@ -4,8 +4,8 @@ import react from '@vitejs/plugin-react'
 export default defineConfig({
   plugins: [react()],
   build: {
-    outDir: '../dist/webview',
+    outDir: 'dist',
     emptyOutDir: true,
   },
-  base: './',
+  base: '/',
 })

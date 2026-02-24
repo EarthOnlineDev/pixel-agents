@@ -6,14 +6,15 @@ import { EditorToolbar } from './office/editor/EditorToolbar.js'
 import { EditorState } from './office/editor/editorState.js'
 import { EditTool } from './office/types.js'
 import { isRotatable } from './office/layout/furnitureCatalog.js'
-import { vscode } from './vscodeApi.js'
-import { useExtensionMessages } from './hooks/useExtensionMessages.js'
 import { PULSE_ANIMATION_DURATION_SEC } from './constants.js'
 import { useEditorActions } from './hooks/useEditorActions.js'
 import { useEditorKeyboard } from './hooks/useEditorKeyboard.js'
+import { useWebSocket } from './hooks/useWebSocket.js'
 import { ZoomControls } from './components/ZoomControls.js'
 import { BottomToolbar } from './components/BottomToolbar.js'
 import { DebugView } from './components/DebugView.js'
+import { LobbyPage } from './lobby/LobbyPage.js'
+import type { PlayerStatus } from './network/protocol.js'
 
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null }
@@ -116,20 +117,22 @@ function EditActionBar({ editor, editorState: es }: { editor: ReturnType<typeof 
   )
 }
 
+type AppScreen = 'lobby' | 'connecting' | 'office'
+
 function App() {
+  const [screen, setScreen] = useState<AppScreen>('lobby')
+  const [error, setError] = useState<string | null>(null)
+
   const editor = useEditorActions(getOfficeState, editorState)
-
   const isEditDirty = useCallback(() => editor.isEditMode && editor.isDirty, [editor.isEditMode, editor.isDirty])
+  void isEditDirty // suppress unused (reserved for future use)
 
-  const { agents, selectedAgent, agentTools, agentStatuses, subagentTools, subagentCharacters, layoutReady, loadedAssets } = useExtensionMessages(getOfficeState, editor.setLastSavedLayout, isEditDirty)
+  const ws = useWebSocket(getOfficeState, editor.setLastSavedLayout)
 
   const [isDebugMode, setIsDebugMode] = useState(false)
-
   const handleToggleDebugMode = useCallback(() => setIsDebugMode((prev) => !prev), [])
 
-  const handleSelectAgent = useCallback((id: number) => {
-    vscode.postMessage({ type: 'focusAgent', id })
-  }, [])
+  const [myStatus, setMyStatus] = useState<PlayerStatus>('idle')
 
   const containerRef = useRef<HTMLDivElement>(null)
 
@@ -146,21 +149,41 @@ function App() {
     editor.handleToggleEditMode,
   )
 
-  const handleCloseAgent = useCallback((id: number) => {
-    vscode.postMessage({ type: 'closeAgent', id })
-  }, [])
+  // Detect room ID from URL hash
+  const hashRoomId = typeof window !== 'undefined'
+    ? window.location.hash.replace('#', '').trim() || null
+    : null
 
-  const handleClick = useCallback((agentId: number) => {
-    // If clicked agent is a sub-agent, focus the parent's terminal instead
-    const os = getOfficeState()
-    const meta = os.subagentMeta.get(agentId)
-    const focusId = meta ? meta.parentAgentId : agentId
-    vscode.postMessage({ type: 'focusAgent', id: focusId })
+  const handleCreateRoom = useCallback((playerName: string, characterIndex: number) => {
+    setScreen('connecting')
+    setError(null)
+    ws.createRoom(playerName, characterIndex)
+  }, [ws])
+
+  const handleJoinRoom = useCallback((roomId: string, playerName: string, characterIndex: number) => {
+    setScreen('connecting')
+    setError(null)
+    ws.joinRoom(roomId, playerName, characterIndex)
+  }, [ws])
+
+  const handleSetStatus = useCallback((status: PlayerStatus) => {
+    setMyStatus(status)
+    ws.setStatus(status)
+  }, [ws])
+
+  // Transition to office when room is joined
+  if (screen === 'connecting' && ws.roomId) {
+    setScreen('office')
+    window.location.hash = ws.roomId
+  }
+
+  const handleClick = useCallback((_agentId: number) => {
+    // In multiplayer mode, clicking a character is a no-op for now
   }, [])
 
   const officeState = getOfficeState()
 
-  // Force dependency on editorTickForKeyboard to propagate keyboard-triggered re-renders
+  // Force dependency on editorTickForKeyboard
   void editorTickForKeyboard
 
   // Show "Press R to rotate" hint when a rotatable item is selected or being placed
@@ -175,10 +198,32 @@ function App() {
     return false
   })()
 
-  if (!layoutReady) {
+  // ── Lobby screen ──
+  if (screen === 'lobby') {
     return (
-      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--vscode-foreground)' }}>
-        Loading...
+      <LobbyPage
+        onCreateRoom={handleCreateRoom}
+        onJoinRoom={handleJoinRoom}
+        initialRoomId={hashRoomId}
+      />
+    )
+  }
+
+  // ── Connecting screen ──
+  if (screen === 'connecting') {
+    return (
+      <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', background: '#1a1a2e', color: '#e0e0e0', fontFamily: 'monospace' }}>
+        <div style={{ fontSize: '24px', marginBottom: 12 }}>Connecting...</div>
+        {error && <div style={{ fontSize: '18px', color: '#ff6b6b' }}>{error}</div>}
+      </div>
+    )
+  }
+
+  // ── Office screen ──
+  if (!ws.layoutReady) {
+    return (
+      <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#1a1a2e', color: '#e0e0e0', fontFamily: 'monospace' }}>
+        Loading office...
       </div>
     )
   }
@@ -225,10 +270,14 @@ function App() {
 
       <BottomToolbar
         isEditMode={editor.isEditMode}
-        onOpenClaude={editor.handleOpenClaude}
         onToggleEditMode={editor.handleToggleEditMode}
         isDebugMode={isDebugMode}
         onToggleDebugMode={handleToggleDebugMode}
+        currentStatus={myStatus}
+        onSetStatus={handleSetStatus}
+        roomId={ws.roomId}
+        playerCount={ws.players.length}
+        connected={ws.connected}
       />
 
       {editor.isEditMode && editor.isDirty && (
@@ -259,7 +308,6 @@ function App() {
       )}
 
       {editor.isEditMode && (() => {
-        // Compute selected furniture color from current layout
         const selUid = editorState.selectedFurnitureUid
         const selColor = selUid
           ? officeState.getLayout().furniture.find((f) => f.uid === selUid)?.color ?? null
@@ -279,30 +327,28 @@ function App() {
             onWallColorChange={editor.handleWallColorChange}
             onSelectedFurnitureColorChange={editor.handleSelectedFurnitureColorChange}
             onFurnitureTypeChange={editor.handleFurnitureTypeChange}
-            loadedAssets={loadedAssets}
+            loadedAssets={undefined}
           />
         )
       })()}
 
       <ToolOverlay
         officeState={officeState}
-        agents={agents}
-        agentTools={agentTools}
-        subagentCharacters={subagentCharacters}
+        players={ws.players}
+        myPlayerId={ws.myPlayerId}
         containerRef={containerRef}
         zoom={editor.zoom}
         panRef={editor.panRef}
-        onCloseAgent={handleCloseAgent}
       />
 
       {isDebugMode && (
         <DebugView
-          agents={agents}
-          selectedAgent={selectedAgent}
-          agentTools={agentTools}
-          agentStatuses={agentStatuses}
-          subagentTools={subagentTools}
-          onSelectAgent={handleSelectAgent}
+          agents={ws.players.map((p) => p.id)}
+          selectedAgent={ws.myPlayerId}
+          agentTools={{}}
+          agentStatuses={Object.fromEntries(ws.players.map((p) => [p.id, p.status]))}
+          subagentTools={{}}
+          onSelectAgent={() => {}}
         />
       )}
     </div>

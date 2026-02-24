@@ -263,29 +263,8 @@ export function useWebSocket(
     channel.on('broadcast', { event: 'move' }, ({ payload }) => {
       const { playerId, tileCol, tileRow } = payload as { playerId: number; tileCol: number; tileRow: number }
       if (playerId === myInfo.id) return
-
-      const ch = os.characters.get(playerId)
-      if (!ch) return
-
-      const dist = Math.abs(ch.tileCol - tileCol) + Math.abs(ch.tileRow - tileRow)
-      if (dist === 0) return // Already there
-
-      // If character is mid-walk toward the same target, don't interrupt
-      if (ch.path.length > 0) {
-        const lastStep = ch.path[ch.path.length - 1]
-        if (lastStep.col === tileCol && lastStep.row === tileRow) return
-      }
-
-      if (dist > 10) {
-        // Very far — teleport
-        os.teleportToTile(playerId, tileCol, tileRow)
-      } else {
-        // Use relaxed walk (unblocks target tile so remote chars can reach seats)
-        const walked = os.walkToTileRelaxed(playerId, tileCol, tileRow)
-        if (!walked) {
-          os.teleportToTile(playerId, tileCol, tileRow)
-        }
-      }
+      // updateRemotePath handles all cases: fresh walk, mid-walk update, teleport
+      os.updateRemotePath(playerId, tileCol, tileRow)
     })
 
     channel.subscribe(async (status) => {

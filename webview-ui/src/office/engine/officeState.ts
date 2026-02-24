@@ -354,24 +354,65 @@ export class OfficeState {
     return true
   }
 
-  /** Walk a remote character to a tile, temporarily unblocking the target.
-   *  Remote characters may need to reach tiles that are blocked locally
-   *  (e.g. seats assigned differently on each client). */
-  walkToTileRelaxed(agentId: number, col: number, row: number): boolean {
-    const ch = this.characters.get(agentId)
-    if (!ch) return false
-    const targetKey = `${col},${row}`
+  /** Pathfind with the target tile temporarily unblocked */
+  private findPathRelaxed(fromCol: number, fromRow: number, toCol: number, toRow: number): Array<{ col: number; row: number }> {
+    const targetKey = `${toCol},${toRow}`
     const wasBlocked = this.blockedTiles.has(targetKey)
     if (wasBlocked) this.blockedTiles.delete(targetKey)
-    const path = findPath(ch.tileCol, ch.tileRow, col, row, this.tileMap, this.blockedTiles)
+    const path = findPath(fromCol, fromRow, toCol, toRow, this.tileMap, this.blockedTiles)
     if (wasBlocked) this.blockedTiles.add(targetKey)
-    if (path.length === 0) return false
-    ch.path = path
-    ch.moveProgress = 0
-    ch.state = CharacterState.WALK
-    ch.frame = 0
-    ch.frameTimer = 0
-    return true
+    return path
+  }
+
+  /** Update a remote character's position smoothly.
+   *  - If not walking: start a fresh walk (or teleport if no path).
+   *  - If mid-walk: replace the remaining path AFTER the current step,
+   *    preserving moveProgress so the character doesn't snap back. */
+  updateRemotePath(agentId: number, col: number, row: number): void {
+    const ch = this.characters.get(agentId)
+    if (!ch) return
+
+    const dist = Math.abs(ch.tileCol - col) + Math.abs(ch.tileRow - row)
+    if (dist === 0) return // Already there
+
+    // Very far — just teleport
+    if (dist > 10) {
+      this.teleportToTile(agentId, col, row)
+      return
+    }
+
+    // If character is mid-walk, update the remaining path without resetting progress
+    if (ch.state === CharacterState.WALK && ch.path.length > 0 && ch.moveProgress > 0) {
+      const currentStep = ch.path[0] // Tile we're currently walking toward
+
+      // Already heading to this target — no change
+      const lastStep = ch.path[ch.path.length - 1]
+      if (lastStep.col === col && lastStep.row === row) return
+
+      // Find path from the end of current step to the new target
+      const newPath = this.findPathRelaxed(currentStep.col, currentStep.row, col, row)
+      if (newPath.length > 0) {
+        // Keep current step + append new path
+        ch.path = [currentStep, ...newPath]
+        // DON'T reset moveProgress — current step continues smoothly
+        return
+      }
+      // Can't path from current step — teleport
+      this.teleportToTile(agentId, col, row)
+      return
+    }
+
+    // Not walking (IDLE/TYPE) or moveProgress=0 — start fresh walk
+    const path = this.findPathRelaxed(ch.tileCol, ch.tileRow, col, row)
+    if (path.length > 0) {
+      ch.path = path
+      ch.moveProgress = 0
+      ch.state = CharacterState.WALK
+      ch.frame = 0
+      ch.frameTimer = 0
+    } else {
+      this.teleportToTile(agentId, col, row)
+    }
   }
 
   /** Create a sub-agent character with the parent's palette. Returns the sub-agent ID. */

@@ -237,7 +237,11 @@ export function useWebSocket(
       if (dist > 10) {
         os.teleportToTile(playerId, tileCol, tileRow)
       } else if (dist > 0) {
-        os.walkToTile(playerId, tileCol, tileRow)
+        // Try pathfinding; fall back to teleport if path is blocked
+        const walked = os.walkToTile(playerId, tileCol, tileRow)
+        if (!walked) {
+          os.teleportToTile(playerId, tileCol, tileRow)
+        }
       }
     })
 

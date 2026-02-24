@@ -198,6 +198,14 @@ export function updateCharacter(
         ch.x = center.x
         ch.y = center.y
 
+        // Remote-controlled characters: just stop walking, go idle
+        if (ch.remoteControlled) {
+          ch.state = CharacterState.IDLE
+          ch.frame = 0
+          ch.frameTimer = 0
+          break
+        }
+
         if (ch.isActive) {
           if (!ch.seatId) {
             // No seat — type in place
@@ -262,8 +270,8 @@ export function updateCharacter(
         ch.moveProgress = 0
       }
 
-      // If became active while wandering, repath to seat
-      if (ch.isActive && ch.seatId) {
+      // If became active while wandering, repath to seat (skip for remote-controlled)
+      if (ch.isActive && ch.seatId && !ch.remoteControlled) {
         const seat = seats.get(ch.seatId)
         if (seat) {
           const lastStep = ch.path[ch.path.length - 1]

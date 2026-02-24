@@ -13,6 +13,8 @@ import { unlockAudio } from '../../notificationSound.js'
 interface OfficeCanvasProps {
   officeState: OfficeState
   onClick: (agentId: number) => void
+  /** Local player's character ID — only this character can be selected/moved */
+  myPlayerId: number | null
   isEditMode: boolean
   editorState: EditorState
   onEditorTileAction: (col: number, row: number) => void
@@ -27,7 +29,7 @@ interface OfficeCanvasProps {
   panRef: React.MutableRefObject<{ x: number; y: number }>
 }
 
-export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, onEditorTileAction, onEditorEraseAction, onEditorSelectionChange, onDeleteSelected, onRotateSelected, onDragMove, editorTick: _editorTick, zoom, onZoomChange, panRef }: OfficeCanvasProps) {
+export function OfficeCanvas({ officeState, onClick, myPlayerId, isEditMode, editorState, onEditorTileAction, onEditorEraseAction, onEditorSelectionChange, onDeleteSelected, onRotateSelected, onDragMove, editorTick: _editorTick, zoom, onZoomChange, panRef }: OfficeCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const offsetRef = useRef({ x: 0, y: 0 })
@@ -549,6 +551,8 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
       if (hitId !== null) {
         // Dismiss any active bubble on click
         officeState.dismissBubble(hitId)
+        // Only allow selecting our own character in multiplayer
+        if (myPlayerId !== null && hitId !== myPlayerId) return
         // Toggle selection: click same agent deselects, different agent selects
         if (officeState.selectedAgentId === hitId) {
           officeState.selectedAgentId = null
@@ -613,14 +617,14 @@ export function OfficeCanvas({ officeState, onClick, isEditMode, editorState, on
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
     if (isEditMode) return
-    // Right-click to walk selected agent to tile
-    if (officeState.selectedAgentId !== null) {
+    // Right-click to walk selected agent to tile (only own character)
+    if (officeState.selectedAgentId !== null && officeState.selectedAgentId === myPlayerId) {
       const tile = screenToTile(e.clientX, e.clientY)
       if (tile) {
         officeState.walkToTile(officeState.selectedAgentId, tile.col, tile.row)
       }
     }
-  }, [isEditMode, officeState, screenToTile])
+  }, [isEditMode, officeState, screenToTile, myPlayerId])
 
   // Wheel: Ctrl+wheel to zoom, plain wheel/trackpad to pan
   const handleWheel = useCallback(

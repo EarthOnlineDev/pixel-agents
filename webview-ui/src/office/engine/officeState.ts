@@ -354,6 +354,26 @@ export class OfficeState {
     return true
   }
 
+  /** Walk a remote character to a tile, temporarily unblocking the target.
+   *  Remote characters may need to reach tiles that are blocked locally
+   *  (e.g. seats assigned differently on each client). */
+  walkToTileRelaxed(agentId: number, col: number, row: number): boolean {
+    const ch = this.characters.get(agentId)
+    if (!ch) return false
+    const targetKey = `${col},${row}`
+    const wasBlocked = this.blockedTiles.has(targetKey)
+    if (wasBlocked) this.blockedTiles.delete(targetKey)
+    const path = findPath(ch.tileCol, ch.tileRow, col, row, this.tileMap, this.blockedTiles)
+    if (wasBlocked) this.blockedTiles.add(targetKey)
+    if (path.length === 0) return false
+    ch.path = path
+    ch.moveProgress = 0
+    ch.state = CharacterState.WALK
+    ch.frame = 0
+    ch.frameTimer = 0
+    return true
+  }
+
   /** Create a sub-agent character with the parent's palette. Returns the sub-agent ID. */
   addSubagent(parentAgentId: number, parentToolId: string): number {
     const key = `${parentAgentId}:${parentToolId}`

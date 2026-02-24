@@ -7,9 +7,9 @@
  *
  * Position sync strategy:
  * - Broadcast 'move' events for real-time position updates (rAF loop, 200ms throttle)
- * - Heartbeat every 3s: re-broadcasts position AND updates presence
- * - Presence sync corrects drift for existing remote characters
- * - Initial position broadcast on subscribe
+ * - Heartbeat every 5s updates presence only (keeps data fresh for new joiners)
+ * - Presence sync is used ONLY for adding/removing characters, NOT repositioning existing ones
+ * - Remote characters use walkToTileRelaxed (ignores blocked target) to avoid teleport flicker
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
@@ -74,8 +74,8 @@ function generatePlayerId(): number {
 
 /** Throttle interval for position broadcasts (ms) */
 const POSITION_BROADCAST_INTERVAL_MS = 200
-/** Heartbeat interval — re-broadcast position + update presence (ms) */
-const HEARTBEAT_INTERVAL_MS = 3000
+/** Heartbeat: update presence with current position for new joiners (ms) */
+const PRESENCE_HEARTBEAT_MS = 5000
 
 export function useWebSocket(
   getOfficeState: () => OfficeState,
@@ -142,8 +142,8 @@ export function useWebSocket(
     return () => cancelAnimationFrame(animId)
   }, [getOfficeState])
 
-  // Heartbeat: re-broadcast position + update presence every 3s
-  // This ensures positions stay synced even when characters aren't moving
+  // Presence heartbeat: keep position fresh for new joiners / reconnects.
+  // Does NOT broadcast — the rAF loop above handles real-time sync.
   useEffect(() => {
     const interval = setInterval(() => {
       const channel = channelRef.current
@@ -154,14 +154,7 @@ export function useWebSocket(
       const ch = os.characters.get(myInfo.id)
       if (!ch) return
 
-      // Always broadcast current position (even if unchanged)
-      channel.send({
-        type: 'broadcast',
-        event: 'move',
-        payload: { playerId: myInfo.id, tileCol: ch.tileCol, tileRow: ch.tileRow },
-      })
-
-      // Update presence with current position (for new joiners / reconnects)
+      // Only update presence (no broadcast — avoids re-triggering walks)
       channel.track({
         id: myInfo.id,
         name: myInfo.name,
@@ -171,11 +164,7 @@ export function useWebSocket(
         tileCol: ch.tileCol,
         tileRow: ch.tileRow,
       })
-
-      // Keep lastBroadcastPos in sync
-      lastBroadcastPos.current = { col: ch.tileCol, row: ch.tileRow }
-      lastBroadcastTime.current = Date.now()
-    }, HEARTBEAT_INTERVAL_MS)
+    }, PRESENCE_HEARTBEAT_MS)
 
     return () => clearInterval(interval)
   }, [getOfficeState])
@@ -201,7 +190,8 @@ export function useWebSocket(
       },
     })
 
-    // Presence sync — rebuild full player list from presence state
+    // Presence sync — add/remove characters only.
+    // Does NOT reposition existing characters (that's handled by broadcast 'move').
     channel.on('presence', { event: 'sync' }, () => {
       const state = channel.presenceState<PresencePayload>()
       const allPlayers: PlayerInfo[] = []
@@ -225,39 +215,27 @@ export function useWebSocket(
       const currentIds = new Set(os.characters.keys())
       const presenceIds = new Set(allPlayers.map((p) => p.id))
 
-      // Add new characters OR update existing remote character positions
+      // Add NEW characters only
       for (const presences of Object.values(state)) {
         if (presences.length === 0) continue
         const p = presences[0] as unknown as PresencePayload
+        if (currentIds.has(p.id)) continue // Already exists — don't reposition
+
         const isMe = p.id === myInfo.id
+        os.addAgent(p.id, p.characterIndex, 0, p.seatId ?? undefined, isMe)
 
-        if (!currentIds.has(p.id)) {
-          // New character — add and position
-          os.addAgent(p.id, p.characterIndex, 0, p.seatId ?? undefined, isMe)
+        if (!isMe) {
+          // Mark remote characters so they don't auto-wander
+          os.setRemoteControlled(p.id, true)
+          // Place at their actual position from presence
+          if (p.tileCol !== undefined && p.tileRow !== undefined) {
+            os.teleportToTile(p.id, p.tileCol, p.tileRow)
+          }
+        }
 
-          if (!isMe) {
-            // Mark remote characters so they don't auto-wander
-            os.setRemoteControlled(p.id, true)
-            // Place at their actual position from presence
-            if (p.tileCol !== undefined && p.tileRow !== undefined) {
-              os.teleportToTile(p.id, p.tileCol, p.tileRow)
-            }
-          }
-
-          if (statusToActive(p.status)) {
-            os.setAgentActive(p.id, true)
-            os.setAgentTool(p.id, statusToTool(p.status))
-          }
-        } else if (!isMe) {
-          // Existing remote character — update position from presence as fallback
-          // This corrects drift when broadcast events are missed
-          const ch = os.characters.get(p.id)
-          if (ch && p.tileCol !== undefined && p.tileRow !== undefined) {
-            const dist = Math.abs(ch.tileCol - p.tileCol) + Math.abs(ch.tileRow - p.tileRow)
-            if (dist > 0) {
-              os.teleportToTile(p.id, p.tileCol, p.tileRow)
-            }
-          }
+        if (statusToActive(p.status)) {
+          os.setAgentActive(p.id, true)
+          os.setAgentTool(p.id, statusToTool(p.status))
         }
       }
 
@@ -287,18 +265,23 @@ export function useWebSocket(
       if (playerId === myInfo.id) return
 
       const ch = os.characters.get(playerId)
-      if (!ch) {
-        console.warn('[multiplayer] move event for unknown player', playerId)
-        return
+      if (!ch) return
+
+      const dist = Math.abs(ch.tileCol - tileCol) + Math.abs(ch.tileRow - tileRow)
+      if (dist === 0) return // Already there
+
+      // If character is mid-walk toward the same target, don't interrupt
+      if (ch.path.length > 0) {
+        const lastStep = ch.path[ch.path.length - 1]
+        if (lastStep.col === tileCol && lastStep.row === tileRow) return
       }
 
-      // If far away (>10 tiles), teleport instead of pathfinding
-      const dist = Math.abs(ch.tileCol - tileCol) + Math.abs(ch.tileRow - tileRow)
       if (dist > 10) {
+        // Very far — teleport
         os.teleportToTile(playerId, tileCol, tileRow)
-      } else if (dist > 0) {
-        // Try pathfinding; fall back to teleport if path is blocked
-        const walked = os.walkToTile(playerId, tileCol, tileRow)
+      } else {
+        // Use relaxed walk (unblocks target tile so remote chars can reach seats)
+        const walked = os.walkToTileRelaxed(playerId, tileCol, tileRow)
         if (!walked) {
           os.teleportToTile(playerId, tileCol, tileRow)
         }
@@ -326,8 +309,7 @@ export function useWebSocket(
           tileRow,
         })
 
-        // Also broadcast our initial position immediately
-        // (presence sync may be slow; broadcast is instant)
+        // Broadcast initial position (so existing players see us immediately)
         channel.send({
           type: 'broadcast',
           event: 'move',
@@ -341,8 +323,6 @@ export function useWebSocket(
         setConnected(true)
         setRoomId(code)
         setMyPlayerId(myInfo.id)
-
-        console.log('[multiplayer] joined room', code, 'as player', myInfo.id, 'at tile', tileCol, tileRow)
       }
     })
 

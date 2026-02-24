@@ -4,9 +4,6 @@
   "private": true,
   "description": "Multiplayer pixel art virtual office for coding companions",
   "license": "MIT",
-  "workspaces": [
-    "webview-ui"
-  ],
   "scripts": {
     "dev": "cd webview-ui && npm run dev",
     "build": "cd webview-ui && npm run build"

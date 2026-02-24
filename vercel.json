@@ -1,6 +1,6 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "installCommand": "rm -rf node_modules && npm install",
+  "installCommand": "cd webview-ui && rm -rf node_modules && npm install",
   "buildCommand": "cd webview-ui && npm run build",
   "outputDirectory": "webview-ui/dist",
   "framework": "vite"

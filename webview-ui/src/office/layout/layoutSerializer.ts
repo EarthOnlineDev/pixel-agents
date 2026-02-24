@@ -245,13 +245,22 @@ export function createDefaultLayout(): OfficeLayout {
   }
 
   const furniture: PlacedFurniture[] = [
+    // Left desk + PCs
     { uid: 'desk-left', type: FurnitureType.DESK, col: 4, row: 3 },
+    { uid: 'pc-l-1', type: FurnitureType.PC, col: 4, row: 3 },
+    { uid: 'pc-l-2', type: FurnitureType.PC, col: 5, row: 3 },
+    // Right desk + PCs
     { uid: 'desk-right', type: FurnitureType.DESK, col: 13, row: 3 },
+    { uid: 'pc-r-1', type: FurnitureType.PC, col: 13, row: 3 },
+    { uid: 'pc-r-2', type: FurnitureType.PC, col: 14, row: 3 },
+    // Decor
     { uid: 'bookshelf-1', type: FurnitureType.BOOKSHELF, col: 1, row: 5 },
     { uid: 'plant-left', type: FurnitureType.PLANT, col: 1, row: 1 },
     { uid: 'cooler-1', type: FurnitureType.COOLER, col: 17, row: 7 },
     { uid: 'plant-right', type: FurnitureType.PLANT, col: 18, row: 1 },
     { uid: 'whiteboard-1', type: FurnitureType.WHITEBOARD, col: 15, row: 0 },
+    { uid: 'lamp-l', type: FurnitureType.LAMP, col: 5, row: 4 },
+    { uid: 'lamp-r', type: FurnitureType.LAMP, col: 14, row: 4 },
     // Left desk chairs
     { uid: 'chair-l-top', type: FurnitureType.CHAIR, col: 4, row: 2 },
     { uid: 'chair-l-bottom', type: FurnitureType.CHAIR, col: 5, row: 5 },

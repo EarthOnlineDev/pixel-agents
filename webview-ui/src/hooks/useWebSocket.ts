@@ -1,16 +1,18 @@
 /**
- * useWebSocket - Replaces useExtensionMessages for multiplayer web app.
+ * useMultiplayer - Manages multiplayer state via Supabase Realtime.
  *
- * Connects to the WebSocket server, manages room state,
- * and translates server messages into OfficeState mutations.
+ * Uses Supabase Presence for player tracking and Broadcast for events.
+ * Rooms are Supabase channels named `room:XXXXXX`.
+ * No separate server needed.
  */
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import type { OfficeState } from '../office/engine/officeState.js'
 import type { OfficeLayout } from '../office/types.js'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import { migrateLayoutColors } from '../office/layout/layoutSerializer.js'
-import { wsClient } from '../network/wsClient.js'
-import type { ServerMessage, PlayerInfo, PlayerStatus } from '../network/protocol.js'
+import { supabase } from '../network/supabaseClient.js'
+import type { PlayerInfo, PlayerStatus } from '../network/protocol.js'
 import { loadAllAssets, loadDefaultLayout } from '../network/assetLoader.js'
 
 export interface MultiplayerState {
@@ -38,6 +40,21 @@ function statusToActive(status: PlayerStatus): boolean {
   return status === 'coding' || status === 'reading'
 }
 
+/** Generate a random 6-char room code (no ambiguous chars) */
+function generateRoomCode(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'
+  let code = ''
+  for (let i = 0; i < 6; i++) {
+    code += chars[Math.floor(Math.random() * chars.length)]
+  }
+  return code
+}
+
+/** Generate a random player ID (positive integer, avoids collisions) */
+function generatePlayerId(): number {
+  return Math.floor(Math.random() * 900000) + 100000
+}
+
 export function useWebSocket(
   getOfficeState: () => OfficeState,
   onLayoutLoaded?: (layout: OfficeLayout) => void,
@@ -48,14 +65,15 @@ export function useWebSocket(
   const [layoutReady, setLayoutReady] = useState(false)
   const [connected, setConnected] = useState(false)
   const assetsLoadedRef = useRef(false)
+  const channelRef = useRef<RealtimeChannel | null>(null)
+  const myInfoRef = useRef<PlayerInfo | null>(null)
 
-  // Load assets on mount (browser-based, replaces extension asset messages)
+  // Load assets on mount
   useEffect(() => {
     if (assetsLoadedRef.current) return
     assetsLoadedRef.current = true
 
     loadAllAssets().then(async () => {
-      // Load default layout
       const rawLayout = await loadDefaultLayout()
       const os = getOfficeState()
       if (rawLayout && (rawLayout as { version?: number }).version === 1) {
@@ -69,115 +87,156 @@ export function useWebSocket(
     })
   }, [getOfficeState, onLayoutLoaded])
 
-  // Handle server messages
+  // Cleanup channel on unmount
   useEffect(() => {
-    wsClient.setOnMessage((msg: ServerMessage) => {
-      const os = getOfficeState()
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current)
+        channelRef.current = null
+      }
+    }
+  }, [])
 
-      switch (msg.type) {
-        case 'roomJoined': {
-          setRoomId(msg.roomId)
-          setMyPlayerId(msg.playerId)
-          setPlayers(msg.players)
+  /** Subscribe to a room channel with Presence + Broadcast */
+  const subscribeToRoom = useCallback((code: string, myInfo: PlayerInfo) => {
+    const os = getOfficeState()
 
-          // Add all existing players as characters
-          for (const p of msg.players) {
-            if (!os.characters.has(p.id)) {
-              os.addAgent(p.id, p.characterIndex, 0, p.seatId ?? undefined, true)
-              if (statusToActive(p.status)) {
-                os.setAgentActive(p.id, true)
-                os.setAgentTool(p.id, statusToTool(p.status))
-              }
-            }
+    const channel = supabase.channel(`room:${code}`, {
+      config: { presence: { key: String(myInfo.id) } },
+    })
+
+    // Presence sync — rebuild full player list from presence state
+    channel.on('presence', { event: 'sync' }, () => {
+      const state = channel.presenceState<PlayerInfo>()
+      const allPlayers: PlayerInfo[] = []
+
+      for (const presences of Object.values(state)) {
+        if (presences.length > 0) {
+          const p = presences[0] as unknown as PlayerInfo
+          allPlayers.push(p)
+        }
+      }
+
+      setPlayers(allPlayers)
+
+      // Sync characters with OfficeState
+      const currentIds = new Set(os.characters.keys())
+      const presenceIds = new Set(allPlayers.map((p) => p.id))
+
+      // Add new characters
+      for (const p of allPlayers) {
+        if (!currentIds.has(p.id)) {
+          const skipSpawn = p.id === myInfo.id
+          os.addAgent(p.id, p.characterIndex, 0, p.seatId ?? undefined, skipSpawn)
+          if (statusToActive(p.status)) {
+            os.setAgentActive(p.id, true)
+            os.setAgentTool(p.id, statusToTool(p.status))
           }
-          break
         }
+      }
 
-        case 'playerJoined': {
-          setPlayers(prev => [...prev, msg.player])
-          os.addAgent(msg.player.id, msg.player.characterIndex, 0, msg.player.seatId ?? undefined)
-          break
-        }
-
-        case 'playerLeft': {
-          setPlayers(prev => prev.filter(p => p.id !== msg.playerId))
-          os.removeAgent(msg.playerId)
-          break
-        }
-
-        case 'playerStatusChanged': {
-          setPlayers(prev =>
-            prev.map(p =>
-              p.id === msg.playerId ? { ...p, status: msg.status } : p,
-            ),
-          )
-          os.setAgentActive(msg.playerId, statusToActive(msg.status))
-          os.setAgentTool(msg.playerId, statusToTool(msg.status))
-          if (msg.status === 'afk') {
-            os.showWaitingBubble(msg.playerId)
-          }
-          break
-        }
-
-        case 'playerSeatChanged': {
-          setPlayers(prev =>
-            prev.map(p =>
-              p.id === msg.playerId ? { ...p, seatId: msg.seatId } : p,
-            ),
-          )
-          os.reassignSeat(msg.playerId, msg.seatId)
-          break
-        }
-
-        case 'error': {
-          console.error('[WS] Server error:', msg.message)
-          break
+      // Remove departed characters (but keep my own)
+      for (const id of currentIds) {
+        if (!presenceIds.has(id) && id !== myInfo.id) {
+          os.removeAgent(id)
         }
       }
     })
 
-    wsClient.setOnConnect(() => setConnected(true))
-    wsClient.setOnDisconnect(() => setConnected(false))
+    // Broadcast: status changes from other players
+    channel.on('broadcast', { event: 'status' }, ({ payload }) => {
+      const { playerId, status } = payload as { playerId: number; status: PlayerStatus }
+      if (playerId === myInfo.id) return
+
+      os.setAgentActive(playerId, statusToActive(status))
+      os.setAgentTool(playerId, statusToTool(status))
+      if (status === 'afk') {
+        os.showWaitingBubble(playerId)
+      }
+    })
+
+    channel.subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        // Track our presence
+        await channel.track({
+          id: myInfo.id,
+          name: myInfo.name,
+          characterIndex: myInfo.characterIndex,
+          status: myInfo.status,
+          seatId: myInfo.seatId,
+        })
+        setConnected(true)
+        setRoomId(code)
+        setMyPlayerId(myInfo.id)
+
+        // Add ourselves immediately
+        os.addAgent(myInfo.id, myInfo.characterIndex, 0, undefined, true)
+      }
+    })
+
+    channelRef.current = channel
+    myInfoRef.current = myInfo
   }, [getOfficeState])
 
   const createRoom = useCallback((playerName: string, characterIndex: number) => {
-    wsClient.connect()
-    // Wait for connection, then send create
-    const check = setInterval(() => {
-      if (wsClient.isConnected) {
-        clearInterval(check)
-        wsClient.send({ type: 'createRoom', playerName, characterIndex })
-      }
-    }, 100)
-    // Timeout after 10s
-    setTimeout(() => clearInterval(check), 10000)
-  }, [])
+    const code = generateRoomCode()
+    const id = generatePlayerId()
+    const myInfo: PlayerInfo = {
+      id,
+      name: playerName,
+      characterIndex,
+      status: 'idle',
+      seatId: null,
+    }
+    subscribeToRoom(code, myInfo)
+  }, [subscribeToRoom])
 
   const joinRoom = useCallback((targetRoomId: string, playerName: string, characterIndex: number) => {
-    wsClient.connect()
-    const check = setInterval(() => {
-      if (wsClient.isConnected) {
-        clearInterval(check)
-        wsClient.send({ type: 'joinRoom', roomId: targetRoomId, playerName, characterIndex })
-      }
-    }, 100)
-    setTimeout(() => clearInterval(check), 10000)
-  }, [])
+    const id = generatePlayerId()
+    const myInfo: PlayerInfo = {
+      id,
+      name: playerName,
+      characterIndex,
+      status: 'idle',
+      seatId: null,
+    }
+    subscribeToRoom(targetRoomId, myInfo)
+  }, [subscribeToRoom])
 
   const setStatus = useCallback((status: PlayerStatus) => {
-    wsClient.send({ type: 'setStatus', status })
+    const channel = channelRef.current
+    const myInfo = myInfoRef.current
+    if (!channel || !myInfo) return
+
+    // Update local ref
+    myInfoRef.current = { ...myInfo, status }
+
+    // Update presence (so new joiners see current status)
+    channel.track({
+      id: myInfo.id,
+      name: myInfo.name,
+      characterIndex: myInfo.characterIndex,
+      status,
+      seatId: myInfo.seatId,
+    })
+
+    // Broadcast to others for immediate update
+    channel.send({
+      type: 'broadcast',
+      event: 'status',
+      payload: { playerId: myInfo.id, status },
+    })
+
     // Update local state immediately
-    if (myPlayerId !== null) {
-      const os = getOfficeState()
-      os.setAgentActive(myPlayerId, statusToActive(status))
-      os.setAgentTool(myPlayerId, statusToTool(status))
-      setPlayers(prev =>
-        prev.map(p =>
-          p.id === myPlayerId ? { ...p, status } : p,
-        ),
-      )
-    }
-  }, [myPlayerId, getOfficeState])
+    const os = getOfficeState()
+    os.setAgentActive(myInfo.id, statusToActive(status))
+    os.setAgentTool(myInfo.id, statusToTool(status))
+    setPlayers(prev =>
+      prev.map(p =>
+        p.id === myInfo.id ? { ...p, status } : p,
+      ),
+    )
+  }, [getOfficeState])
 
   return {
     roomId,

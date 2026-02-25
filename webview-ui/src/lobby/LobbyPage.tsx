@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import { CharacterPicker } from './CharacterPicker.js'
+import { trackRoomCreated, trackRoomJoined } from '../analytics.js'
 
 interface LobbyPageProps {
   onCreateRoom: (playerName: string, characterIndex: number) => void
@@ -77,6 +78,7 @@ export function LobbyPage({ onCreateRoom, onJoinRoom, initialRoomId }: LobbyPage
     if (!canSubmit) return
     localStorage.setItem('pixel-office-name', playerName.trim())
     localStorage.setItem('pixel-office-character', String(characterIndex))
+    trackRoomCreated()
     onCreateRoom(playerName.trim(), characterIndex)
   }
 
@@ -84,7 +86,9 @@ export function LobbyPage({ onCreateRoom, onJoinRoom, initialRoomId }: LobbyPage
     if (!canSubmit || !roomCode.trim()) return
     localStorage.setItem('pixel-office-name', playerName.trim())
     localStorage.setItem('pixel-office-character', String(characterIndex))
-    onJoinRoom(roomCode.trim().toUpperCase(), playerName.trim(), characterIndex)
+    const code = roomCode.trim().toUpperCase()
+    trackRoomJoined(code)
+    onJoinRoom(code, playerName.trim(), characterIndex)
   }
 
   return (

@@ -15,6 +15,7 @@ import { BottomToolbar } from './components/BottomToolbar.js'
 import { DebugView } from './components/DebugView.js'
 import { LobbyPage } from './lobby/LobbyPage.js'
 import type { PlayerStatus } from './network/protocol.js'
+import { trackEditModeToggled, trackLayoutSaved, trackStatusChanged } from './analytics.js'
 
 // Game state lives outside React — updated imperatively by message handlers
 const officeStateRef = { current: null as OfficeState | null }
@@ -43,7 +44,7 @@ const actionBarBtnDisabled: React.CSSProperties = {
   cursor: 'default',
 }
 
-function EditActionBar({ editor, editorState: es }: { editor: ReturnType<typeof useEditorActions>; editorState: EditorState }) {
+function EditActionBar({ editor, editorState: es, onSave }: { editor: ReturnType<typeof useEditorActions>; editorState: EditorState; onSave: () => void }) {
   const [showResetConfirm, setShowResetConfirm] = useState(false)
 
   const undoDisabled = es.undoStack.length === 0
@@ -83,7 +84,7 @@ function EditActionBar({ editor, editorState: es }: { editor: ReturnType<typeof 
       </button>
       <button
         style={actionBarBtnStyle}
-        onClick={editor.handleSave}
+        onClick={onSave}
         title="Save layout"
       >
         Save
@@ -129,6 +130,16 @@ function App() {
 
   const ws = useWebSocket(getOfficeState, editor.setLastSavedLayout)
 
+  const handleToggleEditMode = useCallback(() => {
+    editor.handleToggleEditMode()
+    trackEditModeToggled(!editor.isEditMode)
+  }, [editor])
+
+  const handleSave = useCallback(() => {
+    editor.handleSave()
+    trackLayoutSaved()
+  }, [editor])
+
   const [isDebugMode, setIsDebugMode] = useState(false)
   const handleToggleDebugMode = useCallback(() => setIsDebugMode((prev) => !prev), [])
 
@@ -146,7 +157,7 @@ function App() {
     editor.handleUndo,
     editor.handleRedo,
     useCallback(() => setEditorTickForKeyboard((n) => n + 1), []),
-    editor.handleToggleEditMode,
+    handleToggleEditMode,
   )
 
   // Detect room ID from URL hash
@@ -169,6 +180,7 @@ function App() {
   const handleSetStatus = useCallback((status: PlayerStatus) => {
     setMyStatus(status)
     ws.setStatus(status)
+    trackStatusChanged(status)
   }, [ws])
 
   // Transition to office when room is joined
@@ -271,7 +283,7 @@ function App() {
 
       <BottomToolbar
         isEditMode={editor.isEditMode}
-        onToggleEditMode={editor.handleToggleEditMode}
+        onToggleEditMode={handleToggleEditMode}
         isDebugMode={isDebugMode}
         onToggleDebugMode={handleToggleDebugMode}
         currentStatus={myStatus}
@@ -282,7 +294,7 @@ function App() {
       />
 
       {editor.isEditMode && editor.isDirty && (
-        <EditActionBar editor={editor} editorState={editorState} />
+        <EditActionBar editor={editor} editorState={editorState} onSave={handleSave} />
       )}
 
       {showRotateHint && (
